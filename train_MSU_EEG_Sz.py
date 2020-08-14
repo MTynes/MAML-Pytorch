@@ -1,11 +1,11 @@
-import  torch, os
-import  numpy as np
-from    MiniImagenet import MiniImagenet
-import  scipy.stats
-from    torch.utils.data import DataLoader
-from    torch.optim import lr_scheduler
-import  random, sys, pickle
-import  argparse
+import torch, os
+import numpy as np
+from MiniImagenet import MiniImagenet
+import scipy.stats
+from torch.utils.data import DataLoader
+from torch.optim import lr_scheduler
+import random, sys, pickle
+import argparse
 
 from meta import Meta
 
@@ -18,7 +18,6 @@ def mean_confidence_interval(accs, confidence=0.95):
 
 
 def main():
-
     torch.manual_seed(222)
     torch.cuda.manual_seed_all(222)
     np.random.seed(222)
@@ -54,9 +53,12 @@ def main():
     print(maml)
     print('Total trainable tensors:', num)
 
+    train_image_directory = args.train_dir
+    test_image_directory = args.test_dir
+
     # batchsz here means total episode number
-    test_image_directory = '/content/drive/My Drive/ML Projects/data/all_images_MSU.ru__gen_data_20s_70pct_overlap_-_high_nfft_all_channels'
-    train_image_directory = '/content/drive/My Drive/ML Projects/data/mini_imagenet/images'
+
+
     print('Using Mini Imagenet and EEG Sz from MSU.ru')
     mini = MiniImagenet(train_image_directory, mode='train', n_way=args.n_way, k_shot=args.k_spt,
                         k_query=args.k_qry,
@@ -65,7 +67,7 @@ def main():
                              k_query=args.k_qry,
                              batchsz=50, resize=args.imgsz)
 
-    for epoch in range(args.epoch//10000):
+    for epoch in range(args.epoch // 10000):
         # fetch meta_batchsz num of episode each time
         db = DataLoader(mini, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
 
@@ -94,14 +96,18 @@ def main():
                 print('Test acc:', accs)
                 print('Mean test acc: ', np.mean(accs))
 
-if __name__ == '__main__':
 
+if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--epoch', type=int, help='epoch number', default=200 * 10000)##60000
-    argparser.add_argument('--n_way', type=int, help='n way', default=2) #cannot be larger than the number of categories
+
+    argparser.add_argument('--train_dir', type=str, help='train data directory', default='/content/miniimagenet/images')
+    argparser.add_argument('--test_dir', type=str, help='test data directory', default='/content/all_test_images')
+    argparser.add_argument('--epoch', type=int, help='epoch number', default=200 * 10000)  ##60000
+    argparser.add_argument('--n_way', type=int, help='n way',
+                           default=2)  # cannot be larger than the number of categories
     argparser.add_argument('--k_spt', type=int, help='k shot for support set', default=1)
     argparser.add_argument('--k_qry', type=int, help='k shot for query set', default=15)
-    argparser.add_argument('--imgsz', type=int, help='imgsz', default=84) #
+    argparser.add_argument('--imgsz', type=int, help='imgsz', default=84)  #
     argparser.add_argument('--imgc', type=int, help='imgc', default=3)
     argparser.add_argument('--task_num', type=int, help='meta batch size, namely task num', default=4)
     argparser.add_argument('--meta_lr', type=float, help='meta-level outer learning rate', default=1e-3)
