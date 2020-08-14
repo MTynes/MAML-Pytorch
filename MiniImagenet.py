@@ -61,7 +61,7 @@ class MiniImagenet(Dataset):
                                                  transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
                                                  ])
 
-        self.path = os.path.join(root, 'images')  # image path
+        self.path = root #os.path.join(root, 'images')  # image path
         csvdata = self.loadCSV(os.path.join(root, mode + '.csv'))  # csv path
         self.data = []
         self.img2label = {}
@@ -80,11 +80,14 @@ class MiniImagenet(Dataset):
         """
         dictLabels = {}
         with open(csvf) as csvfile:
-            csvreader = csv.reader(csvfile, delimiter=',')
-            next(csvreader, None)  # skip (filename, label)
-            for i, row in enumerate(csvreader):
-                filename = row[0]
-                label = row[1]
+            #csvreader = csv.reader(csvfile, delimiter=',')
+            #next(csvreader, None)  # skip (filename, label)
+            import pandas as pd
+            csv_data = pd.read_csv(csvfile)
+            self.full_csv_df = csv_data
+            for i, row in csv_data.iterrows():
+                filename = row['filename']
+                label = row['label']
                 # append filename to current label
                 if label in dictLabels.keys():
                     dictLabels[label].append(filename)
@@ -103,12 +106,22 @@ class MiniImagenet(Dataset):
         self.query_x_batch = []  # query set batch
         for b in range(batchsz):  # for each batch
             # 1.select n_way classes randomly
+            ##print('self.cls_num: ', self.cls_num)
+            ##print('self.n_way: ', self.n_way)
             selected_cls = np.random.choice(self.cls_num, self.n_way, False)  # no duplicate
+            ##print('selected_cls: ', selected_cls)
+            ##print('self.k_shot: ', self.k_shot)
+            ##print('self.k_query: ', self.k_query)
+                
             np.random.shuffle(selected_cls)
             support_x = []
             query_x = []
             for cls in selected_cls:
                 # 2. select k_shot + k_query for each class
+                ##print('cls: ', cls)
+                ##print('len(self.data[cls]): ', len(self.data[cls]))
+                ##print('self.k_shot: ', self.k_shot)
+                ##print('self.k_query: ', self.k_query)
                 selected_imgs_idx = np.random.choice(len(self.data[cls]), self.k_shot + self.k_query, False)
                 np.random.shuffle(selected_imgs_idx)
                 indexDtrain = np.array(selected_imgs_idx[:self.k_shot])  # idx for Dtrain
@@ -141,19 +154,47 @@ class MiniImagenet(Dataset):
 
         flatten_support_x = [os.path.join(self.path, item)
                              for sublist in self.support_x_batch[index] for item in sublist]
-        support_y = np.array(
-            [self.img2label[item[:9]]  # filename:n0153282900000005.jpg, the first 9 characters treated as label
-             for sublist in self.support_x_batch[index] for item in sublist]).astype(np.int32)
+        import pandas as pd
+        local_data = self.full_csv_df
+        ##print(local_data)
 
+        sublist = [s for s in self.support_x_batch[index]]
+        import itertools
+        sublist = list(itertools.chain(*sublist))
+        ##print('sublist: ', sublist)
+        support_y = local_data[local_data['filename'].isin(sublist)].label #.label
+        ##print('support_y: ', support_y)
+        #support_y = local_data[local_data['filename'].isin(sublist)].label
+        
+        #support_y = np.array(
+        #    [self.img2label[item[:9]]  # filename:n0153282900000005.jpg, the first 9 characters treated as label
+        #     for sublist in self.support_x_batch[index] for item in sublist]).astype(np.int32)
+        from IPython.display import display
         flatten_query_x = [os.path.join(self.path, item)
                            for sublist in self.query_x_batch[index] for item in sublist]
-        query_y = np.array([self.img2label[item[:9]]
-                            for sublist in self.query_x_batch[index] for item in sublist]).astype(np.int32)
+
+        query_y_test = []
+        for sublist in self.query_x_batch[index]:
+           for item in sublist:
+              query_y_test.append(item)
+
+
+        ##print('local_data2[item]: ', local_data[local_data.filename == 'train_173.png'].label)
+        ##print('flatten_query_x: ', flatten_query_x)
+        query_y = query_y_test
+        #query_y = np.array([local_data[local_data.filename == item].label
+        #                    for sublist in self.query_x_batch[index] for item in sublist])
+        #query_y = np.array([self.img2label[item[:9]]
+        #                    for sublist in self.query_x_batch[index] for item in sublist]).astype(np.int32)
+        
+        
+        #query_y = np.array(local_data[local_data['filename'] in sublist]).astype(str)
 
         # print('global:', support_y, query_y)
         # support_y: [setsz]
         # query_y: [querysz]
         # unique: [n-way], sorted
+        # print(support_y)
         unique = np.unique(support_y)
         random.shuffle(unique)
         # relative means the label ranges from 0 to n-way

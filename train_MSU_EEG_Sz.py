@@ -55,10 +55,13 @@ def main():
     print('Total trainable tensors:', num)
 
     # batchsz here means total episode number
-    mini = MiniImagenet('/content/all_images_eeg_sz_spectrograms/', mode='train', n_way=args.n_way, k_shot=args.k_spt,
+    test_image_directory = '/content/drive/My Drive/ML Projects/data/all_images_MSU.ru__gen_data_20s_70pct_overlap_-_high_nfft_all_channels'
+    train_image_directory = '/content/drive/My Drive/ML Projects/data/mini_imagenet/images'
+    print('Using Mini Imagenet and EEG Sz from MSU.ru')
+    mini = MiniImagenet(train_image_directory, mode='train', n_way=args.n_way, k_shot=args.k_spt,
                         k_query=args.k_qry,
                         batchsz=50, resize=args.imgsz)
-    mini_test = MiniImagenet('/content/all_images_eeg_sz_spectrograms/', mode='test', n_way=args.n_way, k_shot=args.k_spt,
+    mini_test = MiniImagenet(test_image_directory, mode='test', n_way=args.n_way, k_shot=args.k_spt,
                              k_query=args.k_qry,
                              batchsz=50, resize=args.imgsz)
 
@@ -94,7 +97,7 @@ def main():
 if __name__ == '__main__':
 
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--epoch', type=int, help='epoch number', default=240000)##60000
+    argparser.add_argument('--epoch', type=int, help='epoch number', default=200 * 10000)##60000
     argparser.add_argument('--n_way', type=int, help='n way', default=2) #cannot be larger than the number of categories
     argparser.add_argument('--k_spt', type=int, help='k shot for support set', default=1)
     argparser.add_argument('--k_qry', type=int, help='k shot for query set', default=15)
