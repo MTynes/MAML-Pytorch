@@ -64,7 +64,7 @@ def main():
     mini_test = MiniImagenet(test_image_directory, mode='test', n_way=args.n_way, k_shot=args.k_spt,
                              k_query=args.k_qry,
                              batchsz=50, resize=args.imgsz)
-
+    mean_accs = []
     for epoch in range(args.epoch//10000):
         # fetch meta_batchsz num of episode each time
         db = DataLoader(mini, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
@@ -91,8 +91,16 @@ def main():
 
                 # [b, update_step+1]
                 accs = np.array(accs_all_test).mean(axis=0).astype(np.float16)
-                print('Test acc:', accs)
+                print('Epoch ', epoch, '. Test acc:', accs)
                 print('Mean test acc: ', np.mean(accs))
+                mean_accs.append(np.mean(accs))
+
+    print('\nHighest test accuracy: ', max(mean_accs))
+
+    # log the mean test accuracy data for display later
+    with open(args.accuracy_log_file, 'w') as f:
+        f.write("\n".join([str(s) for s in mean_accs]))
+
 
 if __name__ == '__main__':
 
@@ -100,10 +108,10 @@ if __name__ == '__main__':
 
     argparser.add_argument('--train_dir', type=str, help='train data directory', default='/content/miniimagenet/images')
     argparser.add_argument('--test_dir', type=str, help='test data directory', default='/content/all_test_images')
-    argparser.add_argument('--epoch', type=int, help='epoch number', default=(200 * 10000))##6
+    argparser.add_argument('--epoch', type=int, help='epoch number', default=(300 * 10000))##6
     argparser.add_argument('--n_way', type=int, help='n way', default=2) #cannot be larger than the number of categories
     argparser.add_argument('--k_spt', type=int, help='k shot for support set', default=1)
-    argparser.add_argument('--k_qry', type=int, help='k shot for query set', default=15)
+    argparser.add_argument('--k_qry', type=int, help='k shot for query set', default=1)
     argparser.add_argument('--imgsz', type=int, help='imgsz', default=84) #
     argparser.add_argument('--imgc', type=int, help='imgc', default=3)
     argparser.add_argument('--task_num', type=int, help='meta batch size, namely task num', default=4)
@@ -111,7 +119,8 @@ if __name__ == '__main__':
     argparser.add_argument('--update_lr', type=float, help='task-level inner update learning rate', default=0.01)
     argparser.add_argument('--update_step', type=int, help='task-level inner update steps', default=5)
     argparser.add_argument('--update_step_test', type=int, help='update steps for finetunning', default=10)
-
+    argparser.add_argument('--accuracy_log_file', type=str, help='Output file for mean test accuracy',
+                           default='/content/mean_test_accuracy.txt')
     args = argparser.parse_args()
 
     main()
