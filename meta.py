@@ -141,10 +141,14 @@ class Meta(nn.Module):
         # 	print(torch.norm(p).item())
         self.meta_optim.step()
 
+        # t mean loss for this iteration?
+        mean_loss = np.array([l.item() for l in losses_q]).mean(axis=0).astype(np.float16)
+        #print('loss_q', loss_q)
+        #print('mean loss: ', mean_loss)
 
         accs = np.array(corrects) / (querysz * task_num)
 
-        return accs
+        return loss_q.item(), accs
 
 
     def finetunning(self, x_spt, y_spt, x_qry, y_qry):
@@ -192,10 +196,13 @@ class Meta(nn.Module):
             correct = torch.eq(pred_q, y_qry).sum().item()
             corrects[1] = corrects[1] + correct
 
+        losses = []
+        losses_q = []
         for k in range(1, self.update_step_test):
             # 1. run the i-th task and compute loss for k=1~K-1
             logits = net(x_spt, fast_weights, bn_training=True)
             loss = F.cross_entropy(logits, y_spt)
+            losses.append(loss)
             # 2. compute grad on theta_pi
             grad = torch.autograd.grad(loss, fast_weights)
             # 3. theta_pi = theta_pi - train_lr * grad
@@ -204,7 +211,7 @@ class Meta(nn.Module):
             logits_q = net(x_qry, fast_weights, bn_training=True)
             # loss_q will be overwritten and just keep the loss_q on last update step.
             loss_q = F.cross_entropy(logits_q, y_qry)
-
+            losses_q.append(loss_q)
             with torch.no_grad():
                 pred_q = F.softmax(logits_q, dim=1).argmax(dim=1)
                 correct = torch.eq(pred_q, y_qry).sum().item()  # convert to numpy
@@ -215,7 +222,7 @@ class Meta(nn.Module):
 
         accs = np.array(corrects) / querysz
 
-        return accs
+        return losses, losses_q, accs
 
 
 

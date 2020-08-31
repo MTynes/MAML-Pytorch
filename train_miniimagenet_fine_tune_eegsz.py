@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from torch.optim import lr_scheduler
 import random, sys, pickle
 import argparse
+import pandas as pd
 
 from meta import Meta
 
@@ -19,8 +20,8 @@ def mean_confidence_interval(accs, confidence=0.95):
 
 def main():
     torch.manual_seed(222)
-    torch.cuda.manual_seed_all(222)
-    np.random.seed(222)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(222)
 
     print(args)
 
@@ -45,7 +46,8 @@ def main():
         ('linear', [args.n_way, 32 * 5 * 5])
     ]
 
-    device = torch.device('cuda')
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     maml = Meta(args, config).to(device)
 
     tmp = filter(lambda x: x.requires_grad, maml.parameters())
@@ -67,72 +69,65 @@ def main():
     mini_test = MiniImagenet(test_image_directory, mode='test', n_way=args.n_way, k_shot=args.k_spt,
                              k_query=args.k_qry,
                              batchsz=50, resize=args.imgsz)
-    mean_accs = []
-    for epoch in range(args.epoch // 10000):
-        # fetch meta_batchsz num of episode each time
-        db = DataLoader(mini, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
-        db_fine_tune = DataLoader(mini_fine_tune, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
+    mean_test_accs = []
+    mean_metrics = []
 
-        for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(db):
+    db = DataLoader(mini, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
+    db_fine_tune = DataLoader(mini_fine_tune, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
 
-            x_spt, y_spt, x_qry, y_qry = x_spt.to(device), y_spt.to(device), x_qry.to(device), y_qry.to(device)
+    epoch_params = [args.epochs, args.fine_tuning_epochs]
+    train_loaders = [db, db_fine_tune]
+    training_modes = ['Main training cycle', 'Fine tuning cycle']
+    for i in range(len(train_loaders)):
+        print(training_modes[i])
+        for epoch in range(epoch_params[i] // 10000):
+            # fetch meta_batchsz num of episode each time
 
-            accs = maml(x_spt, y_spt, x_qry, y_qry)
+            for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(train_loaders[i]):
 
-            if step % 30 == 0:
-                print('step:', step, '\ttraining acc:', accs)
+                x_spt, y_spt, x_qry, y_qry = x_spt.to(device), y_spt.to(device), x_qry.to(device), y_qry.to(device)
 
-            if step % 500 == 0:  # evaluation
-                db_test = DataLoader(mini_test, 1, shuffle=True, num_workers=1, pin_memory=True)
-                accs_all_test = []
+                train_losses, train_accs = maml(x_spt, y_spt, x_qry, y_qry)
 
-                for x_spt, y_spt, x_qry, y_qry in db_test:
-                    x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
-                                                 x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
+                if (step % 30) == 0:
+                    print('\nstep:', step, '\ttraining acc:', train_accs)
 
-                    accs = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
-                    accs_all_test.append(accs)
+                if step % 500 == 0:  # evaluation
+                    db_test = DataLoader(mini_test, 1, shuffle=True, num_workers=1, pin_memory=True)
+                    accs_all_test = []
+                    losses_all_test = []
+                    losses_q_all_test = []
 
-                # [b, update_step+1]
-                accs = np.array(accs_all_test).mean(axis=0).astype(np.float16)
-                print('Epoch ', epoch, '. Test acc:', accs)
-                print('Mean test acc: ', np.mean(accs))
-                mean_accs.append(np.mean(accs))
-    print('\nRunning fine tuning with MSU dataset....')
-    for epoch in range(args.epoch_fine_tune // 10000):
-        # fetch meta_batchsz num of episode each time
-        db_fine_tune = DataLoader(mini_fine_tune, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
+                    for x_spt, y_spt, x_qry, y_qry in db_test:
+                        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
+                                                     x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 
-        for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(db_fine_tune):
+                        losses, losses_q, accs = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
+                        accs_all_test.append(accs)
+                        losses_all_test.append(losses)
+                        losses_q_all_test.append(losses_q)
 
-            x_spt, y_spt, x_qry, y_qry = x_spt.to(device), y_spt.to(device), x_qry.to(device), y_qry.to(device)
+                        # [b, update_step+1]
+                    accs = np.array(accs_all_test).mean(axis=0).astype(np.float16)
+                    mean_loss = (np.array(losses_all_test).mean(axis=0).astype(np.float16)).mean()
+                    mean_loss_q = (np.array(losses_q_all_test).mean(axis=0).astype(np.float16)).mean()
+                    print('Mean test acc: {}  Mean loss:  {}   Mean query loss: {}'.format(np.mean(accs), mean_loss,
+                                                                                           mean_loss_q))
+                    print('Epoch ', epoch, '. Test acc:', accs)
 
-            accs = maml(x_spt, y_spt, x_qry, y_qry)
 
-            if step % 30 == 0:
-                print('step:', step, '\ttraining acc:', accs)
+                    mean_test_accs.append(np.mean(accs))
 
-            if step % 500 == 0:  # evaluation
-                db_test = DataLoader(mini_test, 1, shuffle=True, num_workers=1, pin_memory=True)
-                accs_all_test = []
+                    mm = {'train_loss': np.mean(train_losses), 'train_accuracy': np.mean(train_accs),
+                          'test_loss': mean_loss, 'test_accuracy': np.mean(accs)}
+                    mean_metrics.append(mm)
 
-                for x_spt, y_spt, x_qry, y_qry in db_test:
-                    x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
-                                                 x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
-
-                    accs = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
-                    accs_all_test.append(accs)
-
-                # [b, update_step+1]
-                accs = np.array(accs_all_test).mean(axis=0).astype(np.float16)
-                print('Epoch ', epoch, '. Test acc:', accs)
-                print('Mean test acc: ', np.mean(accs))
-                mean_accs.append(np.mean(accs))
-    print('\nHighest test accuracy: ', max(mean_accs))
+    print('\nHighest mean test accuracy: ', max(mean_test_accs))
 
     # log the mean test accuracy data for display later
     with open(args.accuracy_log_file, 'w') as f:
-        f.write("\n".join([str(s) for s in mean_accs]))
+        f.write("\n".join([str(s) for s in mean_test_accs]))
+    pd.DataFrame(mean_metrics).to_csv('mean_metrics.csv', index=False)
 
 
 if __name__ == '__main__':
@@ -141,9 +136,12 @@ if __name__ == '__main__':
     argparser.add_argument('--train_dir', type=str, help='train data directory', default='/content/miniimagenet/images')
     argparser.add_argument('--fine_tune_dir', type=str, help='fine tuning data directory',
                            default='/content/all_fine_tuning_images')
+    argparser.add_argument('--validation_dir', type=str, help='validation data directory',
+                           default='/content/all_validation_images')
     argparser.add_argument('--test_dir', type=str, help='test data directory', default='/content/all_test_images')
-    argparser.add_argument('--epoch', type=int, help='epoch number', default=(200 * 10000))  ##6
-    argparser.add_argument('--epoch_fine_tune', type=int, help='epoch number', default=(200 * 10000))  ##6
+    argparser.add_argument('--epochs', type=int, help='Number of epochs', default=(200 * 10000))  ##6
+    argparser.add_argument('--fine_tuning_epochs', type=int, help='Number of epochs for fine tuning cycle',
+                           default=(200 * 10000))  ##6
     argparser.add_argument('--n_way', type=int, help='n way',
                            default=2)  # cannot be larger than the number of categories
     argparser.add_argument('--k_spt', type=int, help='k shot for support set', default=1)
