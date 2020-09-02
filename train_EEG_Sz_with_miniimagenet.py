@@ -97,9 +97,24 @@ def main():
 
     print('\nHighest test accuracy: ', max(mean_accs))
 
+    final_db = mini_test
+    final_test = DataLoader(final_db, 1, shuffle=True, num_workers=1, pin_memory=True)
+
+    predictions_and_labels = pd.DataFrame()
+    for x_spt, y_spt, x_qry, y_qry, cls in final_test:
+        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
+                                     x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
+
+        losses, losses_q, accs, preds = maml.finetunning(x_spt, y_spt, x_qry, y_qry,
+                                                         return_predictions=True)
+        preds['true_label'] = [cls.item() for i in range(preds.shape[0])]
+        predictions_and_labels = predictions_and_labels.append(preds)
+
     # log the mean test accuracy data for display later
     with open(args.accuracy_log_file, 'w') as f:
-        f.write("\n".join([str(s) for s in mean_accs]))
+        f.write("\n".join([str(s) for s in mean_test_accs]))
+    pd.DataFrame(mean_metrics).to_csv('mean_metrics.csv', index=False)
+    predictions_and_labels.to_csv('test_predictions_and_labels.csv', index=False)
 
 
 if __name__ == '__main__':

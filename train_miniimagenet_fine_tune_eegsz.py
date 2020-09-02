@@ -130,8 +130,6 @@ def main():
     final_test = DataLoader(final_db, 1, shuffle=True, num_workers=1, pin_memory=True)
 
     predictions_and_labels = pd.DataFrame()
-    predictions_and_labels_list = []
-    predictions_and_labels_classes = []
     for x_spt, y_spt, x_qry, y_qry, cls in final_test:
         x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                      x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
@@ -140,8 +138,6 @@ def main():
                                                          return_predictions=True)
         preds['true_label'] = [cls.item() for i in range(preds.shape[0])]
         predictions_and_labels = predictions_and_labels.append(preds)
-        predictions_and_labels_classes.append(cls)
-        predictions_and_labels_list.append(preds)
 
 
     # log the mean test accuracy data for display later
@@ -149,12 +145,6 @@ def main():
         f.write("\n".join([str(s) for s in mean_test_accs]))
     pd.DataFrame(mean_metrics).to_csv('mean_metrics.csv', index=False)
     predictions_and_labels.to_csv('test_predictions_and_labels.csv', index=False)
-    print('shape of predictions and labels df: ')
-    print(predictions_and_labels.shape)
-    print('length of classes: ')
-    print(len(predictions_and_labels_classes))
-    print('length of predictions list')
-    print(len(predictions_and_labels_list))
 
 
 if __name__ == '__main__':
