@@ -71,7 +71,7 @@ def main():
         # fetch meta_batchsz num of episode each time
         db = DataLoader(mini, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
 
-        for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(db):
+        for step, (x_spt, y_spt, x_qry, y_qry, cls) in enumerate(db):
 
             x_spt, y_spt, x_qry, y_qry = x_spt.to(device), y_spt.to(device), x_qry.to(device), y_qry.to(device)
 
@@ -84,7 +84,7 @@ def main():
                 db_test = DataLoader(mini_test, 1, shuffle=True, num_workers=1, pin_memory=True)
                 accs_all_test = []
 
-                for x_spt, y_spt, x_qry, y_qry in db_test:
+                for x_spt, y_spt, x_qry, y_qry, cls in db_test:
                     x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                                  x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 

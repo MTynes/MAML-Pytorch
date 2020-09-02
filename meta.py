@@ -1,20 +1,21 @@
-import  torch
-from    torch import nn
-from    torch import optim
-from    torch.nn import functional as F
-from    torch.utils.data import TensorDataset, DataLoader
-from    torch import optim
-import  numpy as np
+import torch
+from torch import nn
+from torch import optim
+from torch.nn import functional as F
+from torch.utils.data import TensorDataset, DataLoader
+from torch import optim
+import numpy as np
+import pandas as pd
 
-from    learner import Learner
-from    copy import deepcopy
-
+from learner import Learner
+from copy import deepcopy
 
 
 class Meta(nn.Module):
     """
     Meta Learner
     """
+
     def __init__(self, args, config):
         """
 
@@ -31,12 +32,8 @@ class Meta(nn.Module):
         self.update_step = args.update_step
         self.update_step_test = args.update_step_test
 
-
         self.net = Learner(config, args.imgc, args.imgsz)
         self.meta_optim = optim.Adam(self.net.parameters(), lr=self.meta_lr)
-
-
-
 
     def clip_grad_by_norm_(self, grad, max_norm):
         """
@@ -59,8 +56,7 @@ class Meta(nn.Module):
             for g in grad:
                 g.data.mul_(clip_coef)
 
-        return total_norm/counter
-
+        return total_norm / counter
 
     def forward(self, x_spt, y_spt, x_qry, y_qry):
         """
@@ -76,7 +72,6 @@ class Meta(nn.Module):
 
         losses_q = [0 for _ in range(self.update_step + 1)]  # losses_q[i] is the loss on step i
         corrects = [0 for _ in range(self.update_step + 1)]
-
 
         for i in range(task_num):
 
@@ -127,8 +122,6 @@ class Meta(nn.Module):
                     correct = torch.eq(pred_q, y_qry[i]).sum().item()  # convert to numpy
                     corrects[k + 1] = corrects[k + 1] + correct
 
-
-
         # end of all tasks
         # sum over all losses on query set across all tasks
         loss_q = losses_q[-1] / task_num
@@ -143,15 +136,14 @@ class Meta(nn.Module):
 
         # t mean loss for this iteration?
         mean_loss = np.array([l.item() for l in losses_q]).mean(axis=0).astype(np.float16)
-        #print('loss_q', loss_q)
-        #print('mean loss: ', mean_loss)
+        # print('loss_q', loss_q)
+        # print('mean loss: ', mean_loss)
 
         accs = np.array(corrects) / (querysz * task_num)
 
         return loss_q.item(), accs
 
-
-    def finetunning(self, x_spt, y_spt, x_qry, y_qry):
+    def finetunning(self, x_spt, y_spt, x_qry, y_qry, return_predictions=False):
         """
 
         :param x_spt:   [setsz, c_, h, w]
@@ -175,6 +167,9 @@ class Meta(nn.Module):
         loss = F.cross_entropy(logits, y_spt)
         grad = torch.autograd.grad(loss, net.parameters())
         fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, net.parameters())))
+        predictions = []
+        yq = []
+        labels = []
 
         # this is the loss and accuracy before first update
         with torch.no_grad():
@@ -182,6 +177,8 @@ class Meta(nn.Module):
             logits_q = net(x_qry, net.parameters(), bn_training=True)
             # [setsz]
             pred_q = F.softmax(logits_q, dim=1).argmax(dim=1)
+            predictions.append(pred_q)
+            yq.append(y_qry)
             # scalar
             correct = torch.eq(pred_q, y_qry).sum().item()
             corrects[0] = corrects[0] + correct
@@ -192,6 +189,8 @@ class Meta(nn.Module):
             logits_q = net(x_qry, fast_weights, bn_training=True)
             # [setsz]
             pred_q = F.softmax(logits_q, dim=1).argmax(dim=1)
+            predictions.append(pred_q)
+            yq.append(y_qry)
             # scalar
             correct = torch.eq(pred_q, y_qry).sum().item()
             corrects[1] = corrects[1] + correct
@@ -214,17 +213,28 @@ class Meta(nn.Module):
             losses_q.append(loss_q)
             with torch.no_grad():
                 pred_q = F.softmax(logits_q, dim=1).argmax(dim=1)
+                predictions.append(pred_q)
+                yq.append(y_qry)
                 correct = torch.eq(pred_q, y_qry).sum().item()  # convert to numpy
                 corrects[k + 1] = corrects[k + 1] + correct
-
 
         del net
 
         accs = np.array(corrects) / querysz
+        predictions_and_labels = None
+        if return_predictions:
+            test_predictions = [torch.Tensor.cpu(p).detach().numpy() for p in predictions]
+            true_labels = [torch.Tensor.cpu(label).detach().numpy() for label in yq]
 
-        return losses, losses_q, accs
+            corrects = [torch.eq(predictions[i], yq[i]) for i in range(len(predictions))]
+            corrects = [torch.Tensor.cpu(crts).detach().numpy() for crts in corrects]
+
+            predictions_and_labels = pd.DataFrame({'prediction': np.asarray(test_predictions).flatten(),
+                                                   'ground_truth': np.asarray(true_labels).flatten(),
+                                                   'correct': np.asarray(corrects).flatten()})
 
 
+        return losses, losses_q, accs, predictions_and_labels
 
 
 def main():

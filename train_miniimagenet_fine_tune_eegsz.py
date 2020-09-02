@@ -7,6 +7,7 @@ from torch.optim import lr_scheduler
 import random, sys, pickle
 import argparse
 import pandas as pd
+from torch.nn import functional as F
 
 from meta import Meta
 
@@ -79,18 +80,18 @@ def main():
     train_loaders = [db, db_fine_tune]
     training_modes = ['Main training cycle', 'Fine tuning cycle']
     for i in range(len(train_loaders)):
-        print(training_modes[i])
+        print('\n', training_modes[i])
         for epoch in range(epoch_params[i] // 10000):
             # fetch meta_batchsz num of episode each time
 
-            for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(train_loaders[i]):
-
+            for step, (x_spt, y_spt, x_qry, y_qry, cls) in enumerate(train_loaders[i]):
                 x_spt, y_spt, x_qry, y_qry = x_spt.to(device), y_spt.to(device), x_qry.to(device), y_qry.to(device)
 
                 train_losses, train_accs = maml(x_spt, y_spt, x_qry, y_qry)
-
                 if (step % 30) == 0:
-                    print('\nstep:', step, '\ttraining acc:', train_accs)
+                    print('\nEpoch ', epoch)
+                    # print('\nstep:', step, '\ttraining acc:', train_accs)
+                    print('Training accuracies: \t', train_accs)
 
                 if step % 500 == 0:  # evaluation
                     db_test = DataLoader(mini_test, 1, shuffle=True, num_workers=1, pin_memory=True)
@@ -98,11 +99,11 @@ def main():
                     losses_all_test = []
                     losses_q_all_test = []
 
-                    for x_spt, y_spt, x_qry, y_qry in db_test:
+                    for x_spt, y_spt, x_qry, y_qry, cls in db_test:
                         x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                                      x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 
-                        losses, losses_q, accs = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
+                        losses, losses_q, accs, preds = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
                         accs_all_test.append(accs)
                         losses_all_test.append(losses)
                         losses_q_all_test.append(losses_q)
@@ -111,10 +112,10 @@ def main():
                     accs = np.array(accs_all_test).mean(axis=0).astype(np.float16)
                     mean_loss = (np.array(losses_all_test).mean(axis=0).astype(np.float16)).mean()
                     mean_loss_q = (np.array(losses_q_all_test).mean(axis=0).astype(np.float16)).mean()
+
+                    print('Test accuracies: \t', accs)
                     print('Mean test acc: {}  Mean loss:  {}   Mean query loss: {}'.format(np.mean(accs), mean_loss,
                                                                                            mean_loss_q))
-                    print('Epoch ', epoch, '. Test acc:', accs)
-
 
                     mean_test_accs.append(np.mean(accs))
 
@@ -124,10 +125,36 @@ def main():
 
     print('\nHighest mean test accuracy: ', max(mean_test_accs))
 
+    # TODO set to final test set
+    final_db = mini_test
+    final_test = DataLoader(final_db, 1, shuffle=True, num_workers=1, pin_memory=True)
+
+    predictions_and_labels = pd.DataFrame()
+    predictions_and_labels_list = []
+    predictions_and_labels_classes = []
+    for x_spt, y_spt, x_qry, y_qry, cls in final_test:
+        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
+                                     x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
+
+        losses, losses_q, accs, preds = maml.finetunning(x_spt, y_spt, x_qry, y_qry,
+                                                         return_predictions=True)
+        preds['true_label'] = [cls.item() for i in range(preds.shape[0])]
+        predictions_and_labels = predictions_and_labels.append(preds)
+        predictions_and_labels_classes.append(cls)
+        predictions_and_labels_list.append(preds)
+
+
     # log the mean test accuracy data for display later
     with open(args.accuracy_log_file, 'w') as f:
         f.write("\n".join([str(s) for s in mean_test_accs]))
     pd.DataFrame(mean_metrics).to_csv('mean_metrics.csv', index=False)
+    predictions_and_labels.to_csv('test_predictions_and_labels.csv', index=False)
+    print('shape of predictions and labels df: ')
+    print(predictions_and_labels.shape)
+    print('length of classes: ')
+    print(len(predictions_and_labels_classes))
+    print('length of predictions list')
+    print(len(predictions_and_labels_list))
 
 
 if __name__ == '__main__':
