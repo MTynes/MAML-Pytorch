@@ -58,27 +58,38 @@ def main():
 
     # batchsz here means total episode number
     train_image_directory = args.train_dir
+    validation_image_directory = args.validation_dir
     test_image_directory = args.test_dir
-    fine_tune_image_directory = args.fine_tune_dir
 
     mini = MiniImagenet(train_image_directory, mode='train', n_way=args.n_way, k_shot=args.k_spt,
                         k_query=args.k_qry,
                         batchsz=50, resize=args.imgsz)
-    mini_fine_tune = MiniImagenet(fine_tune_image_directory, mode='train', n_way=args.n_way, k_shot=args.k_spt,
-                                  k_query=args.k_qry,
-                                  batchsz=50, resize=args.imgsz)
-    mini_test = MiniImagenet(test_image_directory, mode='test', n_way=args.n_way, k_shot=args.k_spt,
+
+    mini_validate = MiniImagenet(validation_image_directory, mode='test', n_way=args.n_way, k_shot=args.k_spt,
                              k_query=args.k_qry,
                              batchsz=50, resize=args.imgsz)
+
+    mini_test = MiniImagenet(test_image_directory, mode='test', n_way=args.n_way, k_shot=args.k_spt,
+                          k_query=args.k_qry,
+                          batchsz=50, resize=args.imgsz)
+    db = DataLoader(mini, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
+
+    ft = args.run_fine_tuning
+    if ft:
+        fine_tune_image_directory = args.fine_tune_dir
+
+        mini_fine_tune = MiniImagenet(fine_tune_image_directory, mode='train', n_way=args.n_way, k_shot=args.k_spt,
+                                      k_query=args.k_qry,
+                                      batchsz=50, resize=args.imgsz)
+        db_fine_tune = DataLoader(mini_fine_tune, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
+
+    epoch_params = [args.epochs, args.fine_tuning_epochs] if ft else [args.epochs]
+    train_loaders = [db, db_fine_tune] if ft else [db]
+    training_modes = ['Main training cycle', 'Fine tuning cycle'] if ft else ['']
+
     mean_test_accs = []
     mean_metrics = []
 
-    db = DataLoader(mini, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
-    db_fine_tune = DataLoader(mini_fine_tune, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
-
-    epoch_params = [args.epochs, args.fine_tuning_epochs]
-    train_loaders = [db, db_fine_tune]
-    training_modes = ['Main training cycle', 'Fine tuning cycle']
     for i in range(len(train_loaders)):
         print('\n', training_modes[i])
         for epoch in range(epoch_params[i] // 10000):
@@ -90,16 +101,15 @@ def main():
                 train_losses, train_accs = maml(x_spt, y_spt, x_qry, y_qry)
                 if (step % 30) == 0:
                     print('\nEpoch ', epoch)
-                    # print('\nstep:', step, '\ttraining acc:', train_accs)
                     print('Training accuracies: \t', train_accs)
 
                 if step % 500 == 0:  # evaluation
-                    db_test = DataLoader(mini_test, 1, shuffle=True, num_workers=1, pin_memory=True)
+                    db_validate = DataLoader(mini_validate, 1, shuffle=True, num_workers=1, pin_memory=True)
                     accs_all_test = []
                     losses_all_test = []
                     losses_q_all_test = []
 
-                    for x_spt, y_spt, x_qry, y_qry, cls in db_test:
+                    for x_spt, y_spt, x_qry, y_qry, cls in db_validate:
                         x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                                      x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 
@@ -120,12 +130,12 @@ def main():
                     mean_test_accs.append(np.mean(accs))
 
                     mm = {'train_loss': np.mean(train_losses), 'train_accuracy': np.mean(train_accs),
-                          'test_loss': mean_loss, 'test_accuracy': np.mean(accs)}
+                          'val_loss': mean_loss, 'val_accuracy': np.mean(accs)}
                     mean_metrics.append(mm)
 
-    print('\nHighest mean test accuracy: ', max(mean_test_accs))
+    print('\nHighest mean validation accuracy: ', max(mean_test_accs))
 
-    # TODO set to final test set
+    print('\nAssessing test set....')
     final_db = mini_test
     final_test = DataLoader(final_db, 1, shuffle=True, num_workers=1, pin_memory=True)
 
@@ -140,10 +150,11 @@ def main():
         predictions_and_labels = predictions_and_labels.append(preds)
 
 
-    # log the mean test accuracy data for display later
+    # log the mean test accuracy data for later display
     with open(args.accuracy_log_file, 'w') as f:
         f.write("\n".join([str(s) for s in mean_test_accs]))
     pd.DataFrame(mean_metrics).to_csv('mean_metrics.csv', index=False)
+    print('\nMean test accuracy: {:.2f}'.format(predictions_and_labels['correct'].mean()))
     predictions_and_labels.to_csv('test_predictions_and_labels.csv', index=False)
 
 
@@ -156,6 +167,9 @@ if __name__ == '__main__':
     argparser.add_argument('--validation_dir', type=str, help='validation data directory',
                            default='/content/all_validation_images')
     argparser.add_argument('--test_dir', type=str, help='test data directory', default='/content/all_test_images')
+    argparser.add_argument('--run_fine_tuning', default=False, type=lambda x: (str(x).lower() == 'true'),
+                           help='Boolean for adding a second dataset for further training. Set as string. Case insensitive.')
+
     argparser.add_argument('--epochs', type=int, help='Number of epochs', default=(200 * 10000))  ##6
     argparser.add_argument('--fine_tuning_epochs', type=int, help='Number of epochs for fine tuning cycle',
                            default=(200 * 10000))  ##6
