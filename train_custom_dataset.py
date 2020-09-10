@@ -1,15 +1,17 @@
 import torch, os
 import numpy as np
+import pandas as pd
 from MiniImagenet import MiniImagenet
 import scipy.stats
 from torch.utils.data import DataLoader
 from torch.optim import lr_scheduler
 import random, sys, pickle
 import argparse
-import pandas as pd
 from torch.nn import functional as F
 
 from meta import Meta
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import f1_score
 
 
 def mean_confidence_interval(accs, confidence=0.95):
@@ -124,13 +126,13 @@ def main():
                     mean_loss_q = (np.array(losses_q_all_test).mean(axis=0).astype(np.float16)).mean()
 
                     print('Test accuracies: \t', accs)
-                    print('Mean test acc: {}  Mean loss:  {}   Mean query loss: {}'.format(np.mean(accs), mean_loss,
+                    print('Mean test acc: {}  Mean support loss:  {}   Mean query loss: {}'.format(np.mean(accs), mean_loss,
                                                                                            mean_loss_q))
 
                     mean_test_accs.append(np.mean(accs))
 
                     mm = {'train_loss': np.mean(train_losses), 'train_accuracy': np.mean(train_accs),
-                          'val_loss': mean_loss, 'val_accuracy': np.mean(accs)}
+                          'val_loss': mean_loss, 'val_query_loss': mean_loss_q, 'val_accuracy': np.mean(accs)}
                     mean_metrics.append(mm)
 
     print('\nHighest mean validation accuracy: ', max(mean_test_accs))
@@ -138,6 +140,7 @@ def main():
     print('\nAssessing test set....')
     final_db = mini_test
     final_test = DataLoader(final_db, 1, shuffle=True, num_workers=1, pin_memory=True)
+    test_losses, test_losses_query = [], []
 
     predictions_and_labels = pd.DataFrame()
     for x_spt, y_spt, x_qry, y_qry, cls in final_test:
@@ -146,6 +149,8 @@ def main():
 
         losses, losses_q, accs, preds = maml.finetunning(x_spt, y_spt, x_qry, y_qry,
                                                          return_predictions=True)
+        test_losses.extend([l.item() for l in losses])
+        test_losses_query.extend([l.item() for l in losses_q])
         preds['true_label'] = [cls.item() for i in range(preds.shape[0])]
         predictions_and_labels = predictions_and_labels.append(preds)
 
@@ -157,6 +162,25 @@ def main():
     print('\nMean test accuracy: {:.2f}'.format(predictions_and_labels['correct'].mean()))
     predictions_and_labels.to_csv('test_predictions_and_labels.csv', index=False)
 
+
+
+    truth_y = predictions_and_labels['true_label']
+    pred_y = predictions_and_labels['prediction']
+    auc = roc_auc_score(truth_y, pred_y)
+    f1_macro = f1_score(truth_y, pred_y, average='macro')
+    f1_micro = f1_score(truth_y, pred_y, average='micro')
+    final_val = mean_metrics[-1]
+    d = {'Final Val Support Loss': final_val['val_loss'],
+         'Final Val Query Loss': final_val['val_query_loss'],
+         'Final Val Accuracy': final_val['val_accuracy'],
+         'Test Support Loss': np.mean(test_losses),
+         'Test Query Loss': np.mean(test_losses_query),
+         'Test AUC': auc,
+         'Test F1 Score Macro': f1_macro,
+         'Test F1 Score Micro': f1_micro
+         }
+    metrics_summary = pd.DataFrame(d, index=[0])
+    metrics_summary.to_csv('metrics_summary.csv', index=False)
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
