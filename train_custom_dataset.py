@@ -115,7 +115,7 @@ def main():
                         x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                                      x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 
-                        losses, losses_q, accs, preds = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
+                        losses, losses_q, accs, preds, logits = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
                         accs_all_test.append(accs)
                         losses_all_test.append(losses)
                         losses_q_all_test.append(losses_q)
@@ -141,16 +141,18 @@ def main():
     final_db = mini_test
     final_test = DataLoader(final_db, 1, shuffle=True, num_workers=1, pin_memory=True)
     test_losses, test_losses_query = [], []
+    test_logits_all = []  #store logits for all iterations in finetuning and for each cycle here
 
     predictions_and_labels = pd.DataFrame()
     for x_spt, y_spt, x_qry, y_qry, cls in final_test:
         x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                      x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 
-        losses, losses_q, accs, preds = maml.finetunning(x_spt, y_spt, x_qry, y_qry,
+        losses, losses_q, accs, preds, logits = maml.finetunning(x_spt, y_spt, x_qry, y_qry,
                                                          return_predictions=True)
         test_losses.extend([l.item() for l in losses])
         test_losses_query.extend([l.item() for l in losses_q])
+        test_logits_all.extend([torch.Tensor.cpu(l).detach().numpy() for l in logits])
         preds['true_label'] = [cls.item() for i in range(preds.shape[0])]
         predictions_and_labels = predictions_and_labels.append(preds)
 
@@ -163,9 +165,18 @@ def main():
     predictions_and_labels.to_csv('test_predictions_and_labels.csv', index=False)
 
 
-
-    truth_y = predictions_and_labels['true_label']
-    pred_y = predictions_and_labels['prediction']
+    pred_df = predictions_and_labels.copy()
+    # Since prototypical networks always sets the ground truth to 0,
+    # infer the predicted class label from true label and the Boolean value for 'correct'
+    # To do this, set hc to be -1 and sz to 1. This allows the opposite class to be selected
+    # for rows where correct is False by multiplying the true_label by -1
+    pred_df['true_label'] = pred_df.apply(lambda x: -1 if x['true_label'] == 0 else 1, axis=1)
+    pred_df['correct'] = pred_df.apply(lambda x: 1 if x['correct'] == True else 0, axis=1)
+    pred_df['prediction'] = pred_df.apply(lambda x: x['true_label']
+      if x['correct'] == 1 else x['true_label'] * -1, axis=1)
+    pred_df.replace(-1, 0, inplace=True)
+    truth_y = pred_df['true_label']
+    pred_y = pred_df['prediction']
     auc = roc_auc_score(truth_y, pred_y)
     f1_macro = f1_score(truth_y, pred_y, average='macro')
     f1_micro = f1_score(truth_y, pred_y, average='micro')
@@ -181,6 +192,9 @@ def main():
          }
     metrics_summary = pd.DataFrame(d, index=[0])
     metrics_summary.to_csv('metrics_summary.csv', index=False)
+    logits_df = pd.DataFrame({'logits: ': [t[0] for t in test_logits_all], 
+                              'logits1': [t[1] for t in test_logits_all] })
+    logits_df.to_csv('All_logits.csv', index=False, header=False)
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
