@@ -186,6 +186,7 @@ def main():
          'Final Val Accuracy': final_val['val_accuracy'],
          'Test Support Loss': np.mean(test_losses),
          'Test Query Loss': np.mean(test_losses_query),
+		 'Test Accuracy': predictions_and_labels['correct'].mean(),
          'Test AUC': auc,
          'Test F1 Score Macro': f1_macro,
          'Test F1 Score Micro': f1_micro
