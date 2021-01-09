@@ -83,7 +83,7 @@ def main():
                     x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                                  x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 
-                    accs = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
+                    accs = maml.fine_tuning(x_spt, y_spt, x_qry, y_qry)
                     accs_all_test.append(accs)
 
                 # [b, update_step+1]
@@ -104,7 +104,7 @@ if __name__ == '__main__':
     argparser.add_argument('--meta_lr', type=float, help='meta-level outer learning rate', default=1e-3)
     argparser.add_argument('--update_lr', type=float, help='task-level inner update learning rate', default=0.01)
     argparser.add_argument('--update_step', type=int, help='task-level inner update steps', default=5)
-    argparser.add_argument('--update_step_test', type=int, help='update steps for finetunning', default=10)
+    argparser.add_argument('--update_step_test', type=int, help='update steps for fine_tuning', default=10)
 
     args = argparser.parse_args()
 

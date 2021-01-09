@@ -78,16 +78,16 @@ def main():
 
     ft = args.run_fine_tuning
     if ft:
-        fine_tune_image_directory = args.fine_tune_dir
+        further_training_image_directory = args.further_training_dir
 
-        mini_fine_tune = MiniImagenet(fine_tune_image_directory, mode='train', n_way=args.n_way, k_shot=args.k_spt,
+        mini_imagenet_further_training = MiniImagenet(further_training_image_directory, mode='train', n_way=args.n_way, k_shot=args.k_spt,
                                       k_query=args.k_qry,
                                       batchsz=50, resize=args.imgsz)
-        db_fine_tune = DataLoader(mini_fine_tune, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
+        db_further_training = DataLoader(mini_imagenet_further_training, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
 
-    epoch_params = [args.epochs, args.fine_tuning_epochs] if ft else [args.epochs]
-    train_loaders = [db, db_fine_tune] if ft else [db]
-    training_modes = ['Main training cycle', 'Fine tuning cycle'] if ft else ['']
+    epoch_params = [args.epochs, args.further_training_epochs] if ft else [args.epochs]
+    train_loaders = [db, db_further_training] if ft else [db]
+    training_modes = ['Main training cycle', 'Further training cycle'] if ft else ['']
 
     mean_test_accs = []
     mean_metrics = []
@@ -115,7 +115,7 @@ def main():
                         x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                                      x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 
-                        losses, losses_q, accs, preds, logits = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
+                        losses, losses_q, accs, preds, logits = maml.fine_tuning(x_spt, y_spt, x_qry, y_qry)
                         accs_all_test.append(accs)
                         losses_all_test.append(losses)
                         losses_q_all_test.append(losses_q)
@@ -141,21 +141,20 @@ def main():
     final_db = mini_test
     final_test = DataLoader(final_db, 1, shuffle=True, num_workers=1, pin_memory=True)
     test_losses, test_losses_query = [], []
-    test_logits_all = []  #store logits for all iterations in finetuning and for each cycle here
+    test_logits_all = []  # store logits for each iteration in the fine_tuning step, and for each cycle here
 
     predictions_and_labels = pd.DataFrame()
     for x_spt, y_spt, x_qry, y_qry, cls in final_test:
         x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                      x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 
-        losses, losses_q, accs, preds, logits = maml.finetunning(x_spt, y_spt, x_qry, y_qry,
+        losses, losses_q, accs, preds, logits = maml.fine_tuning(x_spt, y_spt, x_qry, y_qry,
                                                          return_predictions=True)
         test_losses.extend([l.item() for l in losses])
         test_losses_query.extend([l.item() for l in losses_q])
         test_logits_all.extend([torch.Tensor.cpu(l).detach().numpy() for l in logits])
         preds['true_label'] = [cls.item() for i in range(preds.shape[0])]
         predictions_and_labels = predictions_and_labels.append(preds)
-
 
     # log the mean test accuracy data for later display
     with open(args.accuracy_log_file, 'w') as f:
@@ -164,11 +163,11 @@ def main():
     print('\nMean test accuracy: {:.2f}'.format(predictions_and_labels['correct'].mean()))
     predictions_and_labels.to_csv('test_predictions_and_labels.csv', index=False)
 
-
     pred_df = predictions_and_labels.copy()
-    # Since prototypical networks always sets the ground truth to 0,
-    # infer the predicted class label from true label and the Boolean value for 'correct'
-    # To do this, set hc to be -1 and sz to 1. This allows the opposite class to be selected
+    # Obtain the predicted class for the data log. Since MAML sets the ground truth to 0,
+    # infer the predicted class label from true label and the Boolean value for 'correct' predictions.
+    # To do this, set class 1 (HC) to be -1 and class 2 (Sz) to 1.
+    # This allows the opposite class to be selected
     # for rows where correct is False by multiplying the true_label by -1
     pred_df['true_label'] = pred_df.apply(lambda x: -1 if x['true_label'] == 0 else 1, axis=1)
     pred_df['correct'] = pred_df.apply(lambda x: 1 if x['correct'] == True else 0, axis=1)
@@ -186,7 +185,7 @@ def main():
          'Final Val Accuracy': final_val['val_accuracy'],
          'Test Support Loss': np.mean(test_losses),
          'Test Query Loss': np.mean(test_losses_query),
-		 'Test Accuracy': predictions_and_labels['correct'].mean(),
+         'Test Accuracy': predictions_and_labels['correct'].mean(),
          'Test AUC': auc,
          'Test F1 Score Macro': f1_macro,
          'Test F1 Score Micro': f1_micro
@@ -197,20 +196,22 @@ def main():
                               'logits1': [t[1] for t in test_logits_all] })
     logits_df.to_csv('All_logits.csv', index=False, header=False)
 
+
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
 
     argparser.add_argument('--train_dir', type=str, help='train data directory', default='/content/miniimagenet/images')
-    argparser.add_argument('--fine_tune_dir', type=str, help='fine tuning data directory',
-                           default='/content/all_fine_tuning_images')
+    argparser.add_argument('--further_training_dir', type=str, help='further training data directory',
+                           default='/content/all_further_training_images')
     argparser.add_argument('--validation_dir', type=str, help='validation data directory',
                            default='/content/all_validation_images')
     argparser.add_argument('--test_dir', type=str, help='test data directory', default='/content/all_test_images')
-    argparser.add_argument('--run_fine_tuning', default=False, type=lambda x: (str(x).lower() == 'true'),
-                           help='Boolean for adding a second dataset for further training. Set as string. Case insensitive.')
+    argparser.add_argument('--run_further_training', default=False, type=lambda x: (str(x).lower() == 'true'),
+                           help='''Boolean for adding a second dataset for further training. Set as string. 
+                           Case insensitive.''')
 
-    argparser.add_argument('--epochs', type=int, help='Number of epochs', default=(200 * 10000))  ##6
-    argparser.add_argument('--fine_tuning_epochs', type=int, help='Number of epochs for fine tuning cycle',
+    argparser.add_argument('--epochs', type=int, help='Number of epochs', default=(200 * 10000))
+    argparser.add_argument('--further_training_epochs', type=int, help='Number of epochs for further training cycle',
                            default=(200 * 10000))  ##6
     argparser.add_argument('--n_way', type=int, help='n way',
                            default=2)  # cannot be larger than the number of categories
@@ -222,7 +223,7 @@ if __name__ == '__main__':
     argparser.add_argument('--meta_lr', type=float, help='meta-level outer learning rate', default=1e-3)
     argparser.add_argument('--update_lr', type=float, help='task-level inner update learning rate', default=0.01)
     argparser.add_argument('--update_step', type=int, help='task-level inner update steps', default=5)
-    argparser.add_argument('--update_step_test', type=int, help='update steps for finetunning', default=10)
+    argparser.add_argument('--update_step_test', type=int, help='update steps for fine-tuning', default=10)
     argparser.add_argument('--accuracy_log_file', type=str, help='Output file for mean test accuracy',
                            default='/content/mean_test_accuracy.txt')
     args = argparser.parse_args()

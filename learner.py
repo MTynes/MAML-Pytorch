@@ -4,7 +4,6 @@ from    torch.nn import functional as F
 import  numpy as np
 
 
-
 class Learner(nn.Module):
     """
 
@@ -18,7 +17,6 @@ class Learner(nn.Module):
         :param imgsz:  28 or 84
         """
         super(Learner, self).__init__()
-
 
         self.config = config
 
@@ -120,7 +118,7 @@ class Learner(nn.Module):
 
     def forward(self, x, vars=None, bn_training=True):
         """
-        This function can be called by finetunning, however, in finetunning, we dont wish to update
+        This function can be called by fine-tuning, however, in fine-tuning, we dont wish to update
         running_mean/running_var. Thought weights/bias of bn is updated, it has been separated by fast_weights.
         Indeed, to not update running_mean/running_var, we need set update_bn_statistics=False
         but weight/bias will be updated and not dirty initial theta parameters via fast_weiths.
@@ -139,7 +137,7 @@ class Learner(nn.Module):
         for name, param in self.config:
             if name is 'conv2d':
                 w, b = vars[idx], vars[idx + 1]
-                # remember to keep synchrozied of forward_encoder and forward_decoder!
+                # remember to keep synchronized with forward_encoder and forward_decoder!
                 x = F.conv2d(x, w, b, stride=param[4], padding=param[5])
                 idx += 2
                 # print(name, param, '\tout:', x.shape)
@@ -189,13 +187,10 @@ class Learner(nn.Module):
         assert idx == len(vars)
         assert bn_idx == len(self.vars_bn)
 
-
         return x
-
 
     def zero_grad(self, vars=None):
         """
-
         :param vars:
         :return:
         """

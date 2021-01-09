@@ -67,7 +67,7 @@ def main(args):
 
                 # split to single task each time
                 for x_spt_one, y_spt_one, x_qry_one, y_qry_one in zip(x_spt, y_spt, x_qry, y_qry):
-                    test_acc = maml.finetunning(x_spt_one, y_spt_one, x_qry_one, y_qry_one)
+                    test_acc = maml.fine_tuning(x_spt_one, y_spt_one, x_qry_one, y_qry_one)
                     accs.append( test_acc )
 
             # [b, update_step+1]
@@ -88,7 +88,7 @@ if __name__ == '__main__':
     argparser.add_argument('--meta_lr', type=float, help='meta-level outer learning rate', default=1e-3)
     argparser.add_argument('--update_lr', type=float, help='task-level inner update learning rate', default=0.4)
     argparser.add_argument('--update_step', type=int, help='task-level inner update steps', default=5)
-    argparser.add_argument('--update_step_test', type=int, help='update steps for finetunning', default=10)
+    argparser.add_argument('--update_step_test', type=int, help='update steps for fine_tuning', default=10)
 
     args = argparser.parse_args()
 

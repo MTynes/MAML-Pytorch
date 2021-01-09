@@ -46,7 +46,7 @@ def main():
         ('linear', [args.n_way, 32 * 5 * 5])
     ]
 
-    device = torch.device('cuda')
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     maml = Meta(args, config).to(device)
 
     tmp = filter(lambda x: x.requires_grad, maml.parameters())
@@ -69,7 +69,7 @@ def main():
         # fetch meta_batchsz num of episode each time
         db = DataLoader(mini, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
 
-        for step, (x_spt, y_spt, x_qry, y_qry, cls) in enumerate(db):
+        for step, (x_spt, y_spt, x_qry, y_qry) in enumerate(db):
 
             x_spt, y_spt, x_qry, y_qry = x_spt.to(device), y_spt.to(device), x_qry.to(device), y_qry.to(device)
 
@@ -82,11 +82,11 @@ def main():
                 db_test = DataLoader(mini_test, 1, shuffle=True, num_workers=1, pin_memory=True)
                 accs_all_test = []
 
-                for x_spt, y_spt, x_qry, y_qry, cls in db_test:
+                for x_spt, y_spt, x_qry, y_qry in db_test:
                     x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
                                                  x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
 
-                    accs = maml.finetunning(x_spt, y_spt, x_qry, y_qry)
+                    accs = maml.fine_tuning(x_spt, y_spt, x_qry, y_qry)
                     accs_all_test.append(accs)
 
                 # [b, update_step+1]
@@ -97,24 +97,9 @@ def main():
 
     print('\nHighest test accuracy: ', max(mean_accs))
 
-    final_db = mini_test
-    final_test = DataLoader(final_db, 1, shuffle=True, num_workers=1, pin_memory=True)
-
-    predictions_and_labels = pd.DataFrame()
-    for x_spt, y_spt, x_qry, y_qry, cls in final_test:
-        x_spt, y_spt, x_qry, y_qry = x_spt.squeeze(0).to(device), y_spt.squeeze(0).to(device), \
-                                     x_qry.squeeze(0).to(device), y_qry.squeeze(0).to(device)
-
-        losses, losses_q, accs, preds = maml.finetunning(x_spt, y_spt, x_qry, y_qry,
-                                                         return_predictions=True)
-        preds['true_label'] = [cls.item() for i in range(preds.shape[0])]
-        predictions_and_labels = predictions_and_labels.append(preds)
-
     # log the mean test accuracy data for display later
     with open(args.accuracy_log_file, 'w') as f:
-        f.write("\n".join([str(s) for s in mean_test_accs]))
-    pd.DataFrame(mean_metrics).to_csv('mean_metrics.csv', index=False)
-    predictions_and_labels.to_csv('test_predictions_and_labels.csv', index=False)
+        f.write("\n".join([str(s) for s in mean_accs]))
 
 
 if __name__ == '__main__':
@@ -133,7 +118,7 @@ if __name__ == '__main__':
     argparser.add_argument('--meta_lr', type=float, help='meta-level outer learning rate', default=1e-3)
     argparser.add_argument('--update_lr', type=float, help='task-level inner update learning rate', default=0.01)
     argparser.add_argument('--update_step', type=int, help='task-level inner update steps', default=5)
-    argparser.add_argument('--update_step_test', type=int, help='update steps for finetunning', default=10)
+    argparser.add_argument('--update_step_test', type=int, help='update steps for fine_tuning', default=10)
     argparser.add_argument('--accuracy_log_file', type=str, help='Output file for mean test accuracy',
                            default='/content/mean_test_accuracy.txt')
     args = argparser.parse_args()
