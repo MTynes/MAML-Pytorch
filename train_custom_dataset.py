@@ -76,7 +76,7 @@ def main():
                           batchsz=50, resize=args.imgsz)
     db = DataLoader(mini, args.task_num, shuffle=True, num_workers=1, pin_memory=True)
 
-    ft = args.run_fine_tuning
+    ft = args.run_further_training
     if ft:
         further_training_image_directory = args.further_training_dir
 
