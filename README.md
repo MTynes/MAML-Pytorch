@@ -1,91 +1,120 @@
 #  MAML-Pytorch
-PyTorch implementation of the supervised learning experiments from the paper:
-[Model-Agnostic Meta-Learning (MAML)](https://arxiv.org/abs/1703.03400).
 
-> Version 1.0: Both `MiniImagenet` and `Omniglot` Datasets are supported! Have Fun~
+This is an extension of [MAML-Pytorch by Liangqu Long](https://github.com/dragen1860/MAML-Pytorch).
+<br>This version allows easy use of a custom dataset, and offers an option for "further training".
+<br>The further training step is typically referred to as fine-tuning in machine-learning. <br>However, this term is already used in MAML to 
+describe the step where the query set is evaluated.
 
-> Version 2.0: Re-write meta learner and basic learner. Solved some serious bugs in version 1.0.
+Logits and predictions are exported to CSV files (All_logits.csv and test_predictions_and_labels, respectively). 
+<br>Test accuracy (mean values for analysis of the query set) are output to mean_test_accuracy.txt .
+<br>Various metrics are also calculated and output to mean_metrics.csv and metrics_summary.csv . 
+<br>mean_metrics.csv includes training and validation (i.e., support and query) loss and accuracy values for each epoch.
+<br>The summary file includes mean support loss, mean test/query loss, test AUC, and test F1 scores (macro and micro).
 
-For Tensorflow Implementation, please visit official [HERE](https://github.com/cbfinn/maml) and simplier version [HERE](https://github.com/dragen1860/MAML-TensorFlow).
-
-For First-Order Approximation Implementation, Reptile namely, please visit [HERE](https://github.com/dragen1860/Reptile-Pytorch).
-
-![heart](res/heart.gif)
-
-# Platform
-- python: 3.x
-- Pytorch: 0.4+
-
-# MiniImagenet
-
-
-## Howto
-
-For 5-way 1-shot exp., it allocates nearly 6GB GPU memory.
-
-1. download `MiniImagenet` dataset from [here](https://github.com/dragen1860/LearningToCompare-Pytorch/issues/4), splitting: `train/val/test.csv` from [here](https://github.com/twitter/meta-learning-lstm/tree/master/data/miniImagenet).
-2. extract it like:
-```shell
-miniimagenet/
-├── images
-	├── n0210891500001298.jpg  
-	├── n0287152500001298.jpg 
-	...
-├── test.csv
-├── val.csv
-└── train.csv
-
-
-```
-3. modify the `path` in `miniimagenet_train.py`:
-```python
-        mini = MiniImagenet('miniimagenet/', mode='train', n_way=args.n_way, k_shot=args.k_spt,
-                    k_query=args.k_qry,
-                    batchsz=10000, resize=args.imgsz)
-		...
-        mini_test = MiniImagenet('miniimagenet/', mode='test', n_way=args.n_way, k_shot=args.k_spt,
-                    k_query=args.k_qry,
-                    batchsz=100, resize=args.imgsz)
-```
-to your actual data path.
-
-4. just run `python miniimagenet_train.py` and the running screenshot is as follows:
-![screenshot-miniimagetnet](res/mini-screen.png)
-
-If your reproducation perf. is not so good, maybe you can enlarge your `training epoch` to get longer training. And MAML is notorious for its hard training. Therefore, this implementation only provide you a basic start point to begin your research.
-and the performance below is true and achieved on my machine.
-
-## Benchmark
-
-| Model                               | Fine Tune | 5-way Acc. |        | 20-way Acc.|        |
-|-------------------------------------|-----------|------------|--------|------------|--------|
-|                                     |           | 1-shot     | 5-shot | 1-shot     | 5-shot |
-| Matching Nets                       | N         | 43.56%     | 55.31% | 17.31%     | 22.69% |
-| Meta-LSTM                           |           | 43.44%     | 60.60% | 16.70%     | 26.06% |
-| MAML                                | Y         | 48.7%      | 63.11% | 16.49%     | 19.29% |
-| **Ours**                            | Y         | 46.2%      | 60.3%	| -    		 | - 	|
+The code has been tested using Google Colab. <br>It requires Python 3.x, PyTorch 0.4+ and CUDA-powered GPUs.
 
 
 
-# Ominiglot
+## Data Requirements
+    
+The training, validation and testing, directories are expected to contain all relevant images,
+<br>along with a CSV file listing the names of all relevant files. This can be generated using os.listdir() .
 
-## Howto
-run `python omniglot_train.py`, the program will download `omniglot` dataset automatically.
+For this version, each training directory (i.e, including the further training directory) must contain a file named train.csv. 
+<br>If further training is being used, each training dataset is expected to be unique.
+<br> The validation set (query set/fine-tuning set) and the testing set are generated from the target dataset.
 
-decrease the value of `args.task_num` to fit your GPU memory capacity.
+Below is an example of the contents of train.csv:
 
-For 5-way 1-shot exp., it allocates nearly 3GB GPU memory.
+     	filename	            label
+    0	sample0001.png	      group1
+    1	sample0002.png	      group2
+    3	sample0003.png	      group1
+    ...
 
 
-# Refer to this Rep.
-```
-@misc{MAML_Pytorch,
-  author = {Liangqu Long},
-  title = {MAML-Pytorch Implementation},
-  year = {2018},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  howpublished = {\url{https://github.com/dragen1860/MAML-Pytorch}},
-  commit = {master}
-}
-```
+## Usage
+
+In a Jupyter/Colab notebook:
+
+
+Retrieve the project files 
+
+    !git clone https://github.com/MTynes/MAML-Pytorch.git maml_pytorch
+	
+
+
+Set the parameters 
+
+	train_directory ='/content/miniimagenet/images'
+	validation_directory ='/content/all_validation_images'
+	test_directory ='/content/all_test_images'
+	further_training_directory = '/content/all_further_training_images'
+
+	n_epochs = 200 * 10000 # As with the original implementation, this value must be a multiple of 10000
+	ft_n_epochs = 200 * 10000
+
+
+Run the training file
+
+    !python /content/maml_pytorch/train_custom_dataset.py --run_further_training 'true' --epochs {n_epochs} --train_dir {train_directory} --validation_dir {validation_directory} --test_dir {test_directory} --further_training_dir {further_training_directory} --further_training_epochs {ft_n_epochs}
+
+
+Examples of use with spectrogram images generated from EEG data are available here:
+<br>https://github.com/WinAIML/schizophrenia/blob/master/MLModels/Meta%20Learning%20Models/MAML_Pytorch_with_Dataset-1.ipynb
+<br>https://github.com/WinAIML/schizophrenia/blob/master/MLModels/Meta%20Learning%20Models/MAML_Pytorch_with_further_training_Test_Dataset-1.ipynb
+
+Read the help summary for further details
+
+    !python /content/maml_pytorch/train_custom_dataset.py --help
+
+
+        usage: train_custom_dataset.py [-h] [--train_dir TRAIN_DIR]
+									   [--further_training_dir FURTHER_TRAINING_DIR]
+									   [--validation_dir VALIDATION_DIR]
+									   [--test_dir TEST_DIR]
+									   [--run_further_training RUN_FURTHER_TRAINING]
+									   [--epochs EPOCHS]
+									   [--further_training_epochs FURTHER_TRAINING_EPOCHS]
+									   [--n_way N_WAY] [--k_spt K_SPT] [--k_qry K_QRY]
+									   [--imgsz IMGSZ] [--imgc IMGC]
+									   [--task_num TASK_NUM] [--meta_lr META_LR]
+									   [--update_lr UPDATE_LR]
+									   [--update_step UPDATE_STEP]
+									   [--update_step_test UPDATE_STEP_TEST]
+									   [--accuracy_log_file ACCURACY_LOG_FILE]
+
+		optional arguments:
+		  -h, --help            show this help message and exit
+		  --train_dir TRAIN_DIR
+								train data directory
+		  --fine_tune_dir FINE_TUNE_DIR
+								fine tuning data directory
+		  --validation_dir VALIDATION_DIR
+								validation data directory
+		  --test_dir TEST_DIR   test data directory
+		  --run_fine_tuning RUN_FINE_TUNING
+								Boolean for adding a second dataset for further
+								training. Set as string. Case insensitive.
+		  --epochs EPOCHS       Number of epochs
+		  --fine_tuning_epochs FINE_TUNING_EPOCHS
+								Number of epochs for fine tuning cycle
+		  --n_way N_WAY         n way
+		  --k_spt K_SPT         k shot for support set
+		  --k_qry K_QRY         k shot for query set
+		  --imgsz IMGSZ         imgsz
+		  --imgc IMGC           imgc
+		  --task_num TASK_NUM   meta batch size, namely task num
+		  --meta_lr META_LR     meta-level outer learning rate
+		  --update_lr UPDATE_LR
+								task-level inner update learning rate
+		  --update_step UPDATE_STEP
+								task-level inner update steps
+		  --update_step_test UPDATE_STEP_TEST
+								update steps for finetunning
+		  --accuracy_log_file ACCURACY_LOG_FILE
+								Output file for mean test accuracy
+
+
+Please refer to the original MAML paper here: [Model-Agnostic Meta-Learning (MAML)](https://arxiv.org/abs/1703.03400).
+
